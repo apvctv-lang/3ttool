@@ -4,11 +4,28 @@ import { GoogleGenAI } from "@google/genai";
 import { ProductAnalysis, DesignMode, RopeType, AppTab } from "../types";
 
 /**
+ * Hàm làm sạch chuỗi API Key, hỗ trợ trường hợp dán nhiều key cách nhau bởi dấu phẩy hoặc xuống dòng.
+ * Việc này ngăn chặn lỗi "Invalid value" trong Headers khi gửi request lên Google API.
+ */
+const getCleanKey = (input: string | null | undefined): string => {
+  if (!input) return "";
+  // Tách chuỗi theo xuống dòng, dấu phẩy, dấu chấm phẩy
+  const keys = input.split(/[\n\r,;]+/).map(k => k.trim()).filter(k => k.length > 20);
+  if (keys.length === 0) return "";
+  // Chọn ngẫu nhiên một key trong danh sách để tận dụng quota (load balancing)
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
+/**
  * Ưu tiên sử dụng API Key từ cấu hình Admin nếu có.
  */
 const getClient = () => {
   const systemKey = localStorage.getItem('app_system_key');
-  const finalKey = systemKey || process.env.API_KEY;
+  const envKey = process.env.API_KEY;
+  
+  // Xử lý làm sạch key (loại bỏ xuống dòng gây lỗi Headers)
+  const finalKey = getCleanKey(systemKey || envKey);
+  
   return new GoogleGenAI({ apiKey: finalKey });
 };
 
@@ -62,7 +79,10 @@ export const setKeyPools = (keys: string[]) => {
 
 export const validateToken = async (tokenInput?: string): Promise<boolean> => {
   try {
-    const ai = tokenInput ? new GoogleGenAI({ apiKey: tokenInput }) : getClient();
+    // Làm sạch tokenInput nếu có nhiều key được dán vào ô test
+    const keyToValidate = tokenInput ? getCleanKey(tokenInput) : "";
+    const ai = keyToValidate ? new GoogleGenAI({ apiKey: keyToValidate }) : getClient();
+    
     await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "Connectivity test.",
