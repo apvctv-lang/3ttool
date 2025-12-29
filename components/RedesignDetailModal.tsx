@@ -41,17 +41,6 @@ interface DesignLayer {
   scale: number;
 }
 
-const COLOR_PALETTE = [
-  { name: 'Classic Red', hex: '#ef4444' },
-  { name: 'Forest Green', hex: '#15803d' },
-  { name: 'Royal Gold', hex: '#fbbf24' },
-  { name: 'Ice Blue', hex: '#3b82f6' },
-  { name: 'Midnight', hex: '#1e293b' },
-  { name: 'Pure White', hex: '#ffffff' },
-  { name: 'Lavender', hex: '#a855f7' },
-  { name: 'Rose Gold', hex: '#f43f5e' },
-];
-
 /**
  * THUẬT TOÁN MAGIC ALPHA CHẤT LƯỢNG CAO - CHỈ DÙNG CHO THIẾT KẾ GỐC
  */
@@ -74,8 +63,8 @@ export const applyAlphaFilter = async (src: string): Promise<string> => {
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i], g = data[i+1], b = data[i+2];
                 const brightness = (r + g + b) / 3;
-                const isGrayish = Math.abs(r - g) < 10 && Math.abs(g - b) < 10;
-                if (brightness > 225 && isGrayish) {
+                const isGrayish = Math.abs(r - g) < 15 && Math.abs(g - b) < 15;
+                if (brightness > 210 && isGrayish) {
                     data[i+3] = 0; 
                 }
             }
@@ -89,7 +78,7 @@ export const applyAlphaFilter = async (src: string): Promise<string> => {
                 if (visited[idx]) continue;
                 visited[idx] = 1;
                 const off = idx * 4;
-                if (data[off+3] === 0 || ((data[off] + data[off+1] + data[off+2])/3 > 195)) {
+                if (data[off+3] === 0 || ((data[off] + data[off+1] + data[off+2])/3 > 185)) {
                     data[off+3] = 0;
                     stack.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]);
                 }
@@ -178,17 +167,21 @@ const ManualCleanupEditor: React.FC<{
         }
     };
 
-    const restoreCanvas = (dataUrl: string) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const img = new Image();
-        img.src = dataUrl;
-        img.onload = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0);
-        };
+    const restoreCanvas = (dataUrl: string): Promise<void> => {
+        return new Promise((resolve) => {
+            const canvas = canvasRef.current;
+            if (!canvas) { resolve(); return; }
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { resolve(); return; }
+            const img = new Image();
+            img.src = dataUrl;
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                resolve();
+            };
+            img.onerror = () => resolve();
+        });
     };
 
     const getMousePos = (e: any) => {
@@ -215,12 +208,11 @@ const ManualCleanupEditor: React.FC<{
         try {
             const currentData = canvas.toDataURL('image/png');
             const polishedData = await applyAlphaFilter(currentData);
-            restoreCanvas(polishedData);
-            setTimeout(() => {
-                saveToHistory();
-                setIsPolishing(false);
-            }, 200);
+            await restoreCanvas(polishedData);
+            saveToHistory();
+            setIsPolishing(false);
         } catch (e) {
+            console.error("Polish failed", e);
             setIsPolishing(false);
         }
     };
@@ -352,7 +344,7 @@ const ManualPlacementEditor: React.FC<{
     designSrc: string; 
     mockupSrc: string;
     onSave: (finalImage: string) => void; 
-    onCancel: () => void;
+    onCancel: () => void; 
     isSaving?: boolean;
 }> = ({ designSrc, mockupSrc, onSave, onCancel, isSaving }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -603,7 +595,7 @@ const ManualPlacementEditor: React.FC<{
 export const RedesignDetailModal: React.FC<RedesignDetailModalProps> = ({
   isOpen, onClose, imageUrl, onRemix, onRemoveBackground, onUpdateImage, isRemixing, onUndo, canUndo, onRedo, canRedo, isTShirtMode
 }) => {
-  const [activeTab, setActiveTab] = useState<'colors' | 'mockup'>('colors');
+  const [activeTab, setActiveTab] = useState<'mockup'>('mockup');
   const [storeGroups, setStoreGroups] = useState<StoreGroup[]>([]);
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
   const [selectedMockupView, setSelectedMockupView] = useState<string | null>(null);
@@ -634,9 +626,9 @@ export const RedesignDetailModal: React.FC<RedesignDetailModalProps> = ({
             setIsProcessingTransparency(false);
         };
         initImage();
-        if (activeTab === 'mockup') fetchMockups();
+        fetchMockups();
     }
-  }, [isOpen, imageUrl, activeTab]);
+  }, [isOpen, imageUrl]);
 
   const fetchMockups = async () => {
       setLoadingMockups(true);
@@ -780,36 +772,32 @@ export const RedesignDetailModal: React.FC<RedesignDetailModalProps> = ({
 
             <div className="w-full lg:w-1/3 bg-slate-900 border-l border-slate-800 flex flex-col">
               <div className="flex border-b border-slate-800">
-                <button onClick={() => setActiveTab('colors')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'colors' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-950/20' : 'text-slate-500 hover:bg-slate-800'}`}>Màu sắc</button>
-                <button onClick={() => setActiveTab('mockup')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'mockup' ? 'text-purple-400 border-b-2 border-purple-500 bg-purple-950/20' : 'text-slate-500 hover:bg-slate-800'}`}>Mockup Store</button>
+                <div className="flex-1 py-3 text-sm font-bold text-center text-purple-400 bg-purple-950/20 border-b-2 border-purple-500">Mockup Store Manager</div>
               </div>
               <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-700">
-                {activeTab === 'colors' && <div className="grid grid-cols-2 gap-3 animate-fade-in">{COLOR_PALETTE.map(c => <button key={c.hex} onClick={() => onRemix(`Change color to ${c.name}`)} className="flex items-center p-2 rounded-lg bg-slate-800 border border-slate-700 hover:border-indigo-500 transition-all"><div className="w-6 h-6 rounded-full mr-3 shadow-inner" style={{ backgroundColor: c.hex }} /><span className="text-sm text-slate-400">{c.name}</span></button>)}</div>}
-                {activeTab === 'mockup' && (
-                  <div className="space-y-6 animate-fade-in">
-                    {loadingMockups ? <RefreshCw className="animate-spin text-slate-600 mx-auto" /> : (
-                        <>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                                {storeGroups.map(s => <button key={s.storeName} onClick={() => setSelectedStore(s.storeName)} className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${selectedStore === s.storeName ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{s.storeName}</button>)}
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                {storeGroups.find(s => s.storeName === selectedStore)?.mockups.map((m, i) => (
-                                    <button 
-                                      key={i} 
-                                      onClick={() => handleSelectMockup(m)} 
-                                      className="relative aspect-[3/4] bg-slate-800 rounded-xl border border-slate-700 overflow-hidden group hover:border-purple-500 transition-all"
-                                    >
-                                        <img src={m.url} alt={m.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                            <span className="text-[10px] font-bold text-white uppercase bg-purple-600 px-2 py-1 rounded">Áp dụng</span>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                  </div>
-                )}
+                <div className="space-y-6 animate-fade-in">
+                  {loadingMockups ? <RefreshCw className="animate-spin text-slate-600 mx-auto" /> : (
+                      <>
+                          <div className="flex flex-wrap gap-2 mb-4">
+                              {storeGroups.map(s => <button key={s.storeName} onClick={() => setSelectedStore(s.storeName)} className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${selectedStore === s.storeName ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{s.storeName}</button>)}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                              {storeGroups.find(s => s.storeName === selectedStore)?.mockups.map((m, i) => (
+                                  <button 
+                                    key={i} 
+                                    onClick={() => handleSelectMockup(m)} 
+                                    className="relative aspect-[3/4] bg-slate-800 rounded-xl border border-slate-700 overflow-hidden group hover:border-purple-500 transition-all"
+                                  >
+                                      <img src={m.url} alt={m.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                          <span className="text-[10px] font-bold text-white uppercase bg-purple-600 px-2 py-1 rounded">Áp dụng</span>
+                                      </div>
+                                  </button>
+                              ))}
+                          </div>
+                      </>
+                  )}
+                </div>
               </div>
             </div>
           </div>

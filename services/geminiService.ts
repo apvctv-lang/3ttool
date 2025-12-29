@@ -4,10 +4,12 @@ import { GoogleGenAI } from "@google/genai";
 import { ProductAnalysis, DesignMode, RopeType, AppTab } from "../types";
 
 /**
- * Luôn sử dụng process.env.API_KEY được gán sẵn bởi Admin từ môi trường hệ thống.
+ * Ưu tiên sử dụng API Key từ cấu hình Admin nếu có.
  */
 const getClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const systemKey = localStorage.getItem('app_system_key');
+  const finalKey = systemKey || process.env.API_KEY;
+  return new GoogleGenAI({ apiKey: finalKey });
 };
 
 const stripBase64Prefix = (base64: string) => {
@@ -55,12 +57,12 @@ export const cleanJsonString = (text: string) => {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const setKeyPools = (keys: string[]) => {
-  console.debug("External key management is disabled. Using system process.env.API_KEY.");
+  console.debug("External key management is disabled. Key is handled via Admin System Settings.");
 };
 
 export const validateToken = async (tokenInput?: string): Promise<boolean> => {
   try {
-    const ai = getClient();
+    const ai = tokenInput ? new GoogleGenAI({ apiKey: tokenInput }) : getClient();
     await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "Connectivity test.",

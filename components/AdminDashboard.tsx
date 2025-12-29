@@ -1,14 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Users, RefreshCw, CheckCircle2, AlertCircle, Shield, MoreHorizontal, Search, Globe, Clock, Circle, Store, Upload, Plus, Image as ImageIcon, LayoutGrid, HardDrive, MousePointer2, Trash2, Loader2, Settings } from 'lucide-react';
-import { getUsers, updateUserPermission, saveMockupToSheet, getMockupsFromSheet } from '../services/googleSheetService';
-
-interface AdminDashboardProps {
-  isOpen: boolean;
-  onClose: () => void;
-  currentUser: string;
-  currentPermissions: string;
-}
+import { X, Users, RefreshCw, CheckCircle2, AlertCircle, Shield, MoreHorizontal, Search, Globe, Clock, Circle, Store, Upload, Plus, Image as ImageIcon, LayoutGrid, HardDrive, MousePointer2, Trash2, Loader2, Settings, Key, Save } from 'lucide-react';
+import { getUsers, updateUserPermission, saveMockupToSheet, getMockupsFromSheet, saveSystemConfig, getSystemConfig } from '../services/googleSheetService';
 
 interface UserData {
   username: string;
@@ -31,12 +24,19 @@ const PERMISSION_OPTIONS = [
   { value: 'BLOCK', label: 'Blocked', color: 'bg-slate-700 text-slate-400 border-slate-600' },
 ];
 
+interface AdminDashboardProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentUser: string;
+  currentPermissions: string;
+}
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose, currentUser, currentPermissions }) => {
   const isAdmin = currentPermissions === 'ADMIN' || currentUser.trim().toLowerCase() === 'admin';
   const isMockupAdmin = currentPermissions === 'MOCKUP_ADMIN';
   const isMockupUploader = currentPermissions === 'MOCKUP_UPLOADER';
 
-  const [activeTab, setActiveTab] = useState<'users' | 'mockups'>(isAdmin ? 'users' : 'mockups');
+  const [activeTab, setActiveTab] = useState<'users' | 'mockups' | 'settings'>(isAdmin ? 'users' : 'mockups');
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +50,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+
+  // System Settings State
+  const [systemApiKey, setSystemApiKey] = useState('');
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configStatus, setConfigStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -69,9 +74,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
     }
   };
 
+  const fetchConfig = async () => {
+    if (!isAdmin) return;
+    try {
+        const res = await getSystemConfig();
+        if (res.status === 'success' && res.apiKey) {
+            setSystemApiKey(res.apiKey);
+        }
+    } catch (e) { console.error(e); }
+  };
+
   useEffect(() => {
-    if (isOpen && activeTab === 'users' && isAdmin) {
-      fetchUsers();
+    if (isOpen) {
+        if (activeTab === 'users' && isAdmin) fetchUsers();
+        if (activeTab === 'settings' && isAdmin) fetchConfig();
     }
   }, [isOpen, activeTab, isAdmin]);
 
@@ -93,7 +109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      const files = (Array.from(e.target.files) as File[]).filter(f => f.type.startsWith('image/'));
       setPendingFiles(prev => [...prev, ...files]);
     }
   };
@@ -102,9 +118,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  /**
-   * Xử lý tải lên hàng loạt Mockup (Xác nhận thủ công)
-   */
   const startMockupUpload = async () => {
     if (pendingFiles.length === 0) return;
     if (!storeName.trim()) {
@@ -149,6 +162,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
     }
   };
 
+  const handleSaveSystemConfig = async () => {
+    setIsSavingConfig(true);
+    setConfigStatus(null);
+    try {
+        const res = await saveSystemConfig(systemApiKey.trim());
+        if (res.status === 'success') {
+            setConfigStatus({ type: 'success', message: 'Hệ thống đã cập nhật API Key và đồng bộ!' });
+            localStorage.setItem('app_system_key', systemApiKey.trim());
+        } else {
+            setConfigStatus({ type: 'error', message: res.message });
+        }
+    } catch (err: any) {
+        setConfigStatus({ type: 'error', message: err.message || 'Lỗi kết nối Server' });
+    } finally {
+        setIsSavingConfig(false);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -163,7 +194,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files) {
-      const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      const files = (Array.from(e.dataTransfer.files) as File[]).filter(f => f.type.startsWith('image/'));
       setPendingFiles(prev => [...prev, ...files]);
     }
   };
@@ -214,6 +245,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
                   >
                     <Store size={14} className="mr-2" />
                     Store & Mockup
+                  </button>
+                )}
+                {isAdmin && (
+                  <button 
+                    onClick={() => setActiveTab('settings')}
+                    className={`flex items-center px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'settings' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    <Settings size={14} className="mr-2" />
+                    System Settings
                   </button>
                 )}
               </div>
@@ -332,7 +372,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
                  </table>
               </div>
             </>
-          ) : (
+          ) : activeTab === 'mockups' ? (
             <div className="flex-1 overflow-auto p-8 bg-slate-900/30 flex flex-col items-center">
                <div className="max-w-xl w-full space-y-8 animate-fade-in">
                   <div className="text-center">
@@ -448,6 +488,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
                               <CheckCircle2 size={16} className="mr-2" />
                               {uploadStatus}
                           </div>
+                      )}
+                  </div>
+               </div>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto p-8 bg-slate-900/30 flex flex-col items-center">
+               <div className="max-w-xl w-full space-y-8 animate-fade-in">
+                  <div className="text-center">
+                      <div className="inline-flex p-4 bg-amber-900/20 rounded-2xl border border-amber-500/30 text-amber-400 mb-4">
+                        <Key size={32} />
+                      </div>
+                      <h2 className="text-2xl font-bold text-white mb-2">Cấu hình Hệ thống</h2>
+                      <p className="text-slate-500 text-sm">Quản lý API Key Gemini cho toàn bộ hệ thống.</p>
+                  </div>
+
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
+                      <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-400 uppercase flex items-center">
+                            <Key size={14} className="mr-1.5 text-amber-500" />
+                            Gemini API Keys (Một hoặc nhiều keys)
+                          </label>
+                          <textarea 
+                            placeholder="Nhập API Key tại đây..." 
+                            value={systemApiKey}
+                            onChange={(e) => setSystemApiKey(e.target.value)}
+                            className="w-full h-48 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 text-xs font-mono focus:border-amber-500 outline-none transition-colors resize-none scrollbar-thin scrollbar-thumb-slate-800"
+                          />
+                          <p className="text-[10px] text-slate-500 italic">Dán một hoặc nhiều API Key vào ô trên. Các key này sẽ được lưu vào Google Sheet (Config) và áp dụng cho tất cả người dùng.</p>
+                      </div>
+
+                      <button 
+                        onClick={handleSaveSystemConfig}
+                        disabled={isSavingConfig || !systemApiKey.trim()}
+                        className="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold flex items-center justify-center shadow-lg shadow-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {isSavingConfig ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
+                        Lưu Cấu Hình & Đồng Bộ
+                      </button>
+
+                      {configStatus && (
+                        <div className={`flex items-center p-4 rounded-xl text-xs font-bold animate-fade-in ${configStatus.type === 'success' ? 'bg-green-950/30 border border-green-900/50 text-green-400' : 'bg-red-950/30 border border-red-900/50 text-red-400'}`}>
+                            {configStatus.type === 'success' ? <CheckCircle2 size={16} className="mr-2" /> : <AlertCircle size={16} className="mr-2" />}
+                            {configStatus.message}
+                        </div>
                       )}
                   </div>
                </div>

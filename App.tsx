@@ -140,7 +140,7 @@ function App() {
   }, [isAuthenticated, username]);
 
   // --- HANDLERS ---
-  const handleLoginSuccess = (user: string, perms?: string) => {
+  const handleLoginSuccess = (user: string, perms?: string, systemKey?: string) => {
     setUsername(user);
     setIsAuthenticated(true);
     localStorage.setItem('app_username', user);
@@ -148,6 +148,12 @@ function App() {
     const finalPerms = perms || 'POD';
     setPermissions(finalPerms);
     localStorage.setItem('app_permissions', finalPerms);
+    
+    // Save system API key if provided by backend
+    if (systemKey) {
+        localStorage.setItem('app_system_key', systemKey);
+    }
+    
     heartbeatFails.current = 0; // Reset counter on login
 
     if (finalPerms === 'TSHIRT') setActiveTab(AppTab.TSHIRT);

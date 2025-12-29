@@ -13,6 +13,7 @@ interface ApiResponse {
   data?: any;
   url?: string;
   base64?: string;
+  apiKey?: string;
 }
 
 export const getPublicIP = async (): Promise<string> => {
@@ -27,25 +28,28 @@ export const getPublicIP = async (): Promise<string> => {
 };
 
 const callScript = async (payload: any, useKeepAlive = false): Promise<ApiResponse> => {
-  if (GOOGLE_SCRIPT_URL.includes("example-replace-this")) {
-    console.warn("Google Sheet Service: Chưa cập nhật Web App URL.");
+  if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("example-replace-this")) {
     return { status: 'error', message: 'Chưa cấu hình Backend URL.' };
   }
 
   try {
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
+    const body = JSON.stringify(payload);
+    const fetchOptions: RequestInit = {
       method: "POST",
       headers: {
         "Content-Type": "text/plain;charset=utf-8", 
       },
-      body: JSON.stringify(payload),
-      keepalive: useKeepAlive, 
-    });
+      body: body,
+      mode: 'cors',
+      cache: 'no-cache',
+      redirect: 'follow',
+    };
 
-    const contentType = response.headers.get("content-type");
-    if (contentType && contentType.includes("text/html")) {
-        return { status: 'error', message: 'Lỗi Backend: URL Google Script không hợp lệ.' };
+    if (useKeepAlive && body.length < 60000) {
+      fetchOptions.keepalive = true;
     }
+
+    const response = await fetch(GOOGLE_SCRIPT_URL, fetchOptions);
 
     if (!response.ok) {
         return { status: 'error', message: `HTTP Error: ${response.status}` };
@@ -56,14 +60,17 @@ const callScript = async (payload: any, useKeepAlive = false): Promise<ApiRespon
 
   } catch (error: any) {
     console.error("API Call Failed", error);
-    return { status: 'error', message: error.message || 'Lỗi kết nối Server.' };
+    const msg = error.name === 'TypeError' && error.message === 'Failed to fetch' 
+      ? 'Lỗi kết nối Server (CORS/Network). Vui lòng kiểm tra lại URL Apps Script hoặc kết nối mạng.'
+      : error.message || 'Lỗi kết nối Server.';
+    return { status: 'error', message: msg };
   }
 };
 
 export const getImageBase64 = async (url: string): Promise<string> => {
   const res = await callScript({ action: 'get_image_base64', url });
   if (res.status === 'success' && res.base64) return res.base64;
-  throw new Error(res.message || "Failed to fetch image base64");
+  throw new Error(res.message || "Failed to fetch image base64 via proxy");
 };
 
 export const registerUser = async (username: string, password: string): Promise<ApiResponse> => {
@@ -119,6 +126,12 @@ export const saveSystemConfig = async (apiKey: string): Promise<ApiResponse> => 
   return callScript({
     action: 'save_config',
     apiKey
+  });
+};
+
+export const getSystemConfig = async (): Promise<ApiResponse> => {
+  return callScript({
+    action: 'get_config'
   });
 };
 
