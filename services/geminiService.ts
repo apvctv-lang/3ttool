@@ -137,8 +137,21 @@ export const analyzeProductDesign = async (
 
     let prompt = "";
     if (activeTab === AppTab.TSHIRT) {
-        prompt = `Analyze this T-shirt graphic. Return ONLY JSON: 
-        { "description": "short description", "designCritique": "critique", "detectedComponents": ["list"], "redesignPrompt": "innovative isolated artwork, strictly transparent background, unified design" }`;
+        prompt = `You are a senior fashion designer specializing in T-Shirt brand systems.
+        Your task is to extract abstract design DNA from this T-Shirt.
+        
+        MANDATORY PROCESS:
+        1. Analyze the original T-Shirt ONLY to extract abstract design DNA.
+           Do NOT remember or reuse any concrete visuals, layouts, graphics, typography, or symbols.
+        2. Translate the DNA into 5–7 reusable design principles (abstract and brand-level).
+        
+        Return ONLY JSON: 
+        { 
+          "description": "Abstract Brand Character & DNA Summary", 
+          "designCritique": "List the 5-7 reusable design principles extracted", 
+          "detectedComponents": ["Abstract DNA tags"], 
+          "redesignPrompt": "Strategic brief for a completely NEW, original T-Shirt using ONLY the principles above. Must feel like the same brand but look clearly different at first glance." 
+        }`;
     } else {
         prompt = `Analyze this POD design. Return ONLY JSON: 
         { "description": "short description", "designCritique": "critique", "detectedComponents": ["list"], "redesignPrompt": "isolated design on white background, high quality" }`;
@@ -186,15 +199,18 @@ export const generateProductRedesigns = async (
     if (activeTab === AppTab.TSHIRT) {
         targetModel = 'gemini-2.5-flash-image';
         targetConfig = { imageConfig: { aspectRatio: '1:1' } };
-        finalPrompt = `TOTAL BREAKTHROUGH DESIGN: Create a NEW unified graphic. 
-        KEEP ONLY 50-60% of original concept while radically evolving the rest.
-        MANDATORY TECHNICAL REQUIREMENTS:
-        1. NO BACKGROUND: Output MUST be an isolated graphic on a NULL TRANSPARENT void.
-        2. NO CHECKERBOARD: Absolutely DO NOT include gray/white checkered patterns to represent transparency.
-        3. NO SQUARE: The design must NOT be placed on a white box or solid square canvas.
-        4. NO MOCKUP ELEMENTS: No shirts, no models, no hangers.
-        5. PNG COMPATIBLE: Sharp edges, alpha channel transparency.
-        Subject: ${basePrompt}. Note: ${userNotes}`;
+        finalPrompt = `You are a senior fashion designer. 
+        Your task is NOT to redesign the same shirt.
+        Your task is to design a completely NEW T-Shirt using ONLY these abstract principles: ${basePrompt}.
+        
+        MANDATORY REQUIREMENTS:
+        - Design a NEW, original T-Shirt belonging to the same brand philosophy.
+        - Must look clearly DIFFERENT at first glance from the original.
+        - NOT a variation, remix, or evolution.
+        - Focus on message and emotion first, graphics second.
+        - If any element feels visually close to the original, discard it.
+        - Strictly isolated graphic, NULL TRANSPARENT void background, no mockup, no hangers.
+        - Note: ${userNotes}`;
     } else {
         finalPrompt = `Isolated design graphic on PURE WHITE background. Subject: ${basePrompt}. ${userNotes}`;
     }
