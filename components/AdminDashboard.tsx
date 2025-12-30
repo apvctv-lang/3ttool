@@ -391,7 +391,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose,
                           </label>
                           <input 
                             type="text" 
-                            placeholder="Ví dụ: Merfast, HaidaAu ..." 
+                            placeholder="Ví dụ: Ornament 2024, T-Shirt Basic..." 
                             value={storeName}
                             onChange={(e) => setStoreName(e.target.value)}
                             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 text-sm focus:border-purple-500 outline-none transition-colors"

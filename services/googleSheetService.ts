@@ -172,6 +172,15 @@ export const sendDataToSheet = async (
   }
 };
 
+export const updateDesignInSheet = async (id: string, username: string, images: string[]): Promise<ApiResponse> => {
+  return callScript({
+    action: 'update_design',
+    id: id,
+    username: username,
+    images: images
+  });
+};
+
 export const saveMockupToSheet = async (storeName: string, mockupName: string, imageBase64: string, username: string): Promise<ApiResponse> => {
   return callScript({
     action: 'save_mockup',

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
@@ -8,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { RedesignDetailModal } from './components/RedesignDetailModal';
 import { LoginScreen } from './components/LoginScreen'; 
 import { cleanupProductImage, analyzeProductDesign, generateProductRedesigns, remixProductImage, detectAndSplitCharacters, generateRandomMockup } from './services/geminiService';
-import { sendDataToSheet, sendHeartbeat, logoutUser, getDesignsFromSheet } from './services/googleSheetService'; 
+import { sendDataToSheet, sendHeartbeat, logoutUser, getDesignsFromSheet, updateDesignInSheet } from './services/googleSheetService'; 
 import { ProductAnalysis, ProcessStage, PRODUCT_TYPES, HistoryItem, DesignMode, RopeType, AppTab } from './types';
 import { AlertCircle, RefreshCw, Eraser, Sparkles, Package, Wand2, Paintbrush, Shirt, LayoutGrid, LogOut, Users, Settings } from 'lucide-react';
 
@@ -30,6 +31,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [productType, setProductType] = useState<string>(PRODUCT_TYPES[0]);
   const [designMode, setDesignMode] = useState<DesignMode>(DesignMode.NEW_CONCEPT);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   
   // Remix / Detail Modal State
   const [selectedRedesignIndex, setSelectedRedesignIndex] = useState<number | null>(null);
@@ -149,12 +151,11 @@ function App() {
     setPermissions(finalPerms);
     localStorage.setItem('app_permissions', finalPerms);
     
-    // Save system API key if provided by backend
     if (systemKey) {
         localStorage.setItem('app_system_key', systemKey);
     }
     
-    heartbeatFails.current = 0; // Reset counter on login
+    heartbeatFails.current = 0; 
 
     if (finalPerms === 'TSHIRT') setActiveTab(AppTab.TSHIRT);
     else setActiveTab(AppTab.POD);
@@ -170,19 +171,6 @@ function App() {
     resetState();
   };
 
-  const addToHistory = (
-    orig: string, 
-    proc: string | null, 
-    anal: ProductAnalysis | null, 
-    redesigns: string[] | null,
-    pType: string,
-    dMode: DesignMode,
-    rType: RopeType,
-    tab: AppTab
-  ) => {
-    // Cloud sync happens via sendDataToSheet already called in startAnalysis
-  };
-
   const handleDeleteHistory = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setHistory(history.filter(item => item.id !== id));
@@ -196,6 +184,7 @@ function App() {
     setProductType(item.productType);
     setDesignMode(item.designMode || DesignMode.NEW_CONCEPT);
     setActiveTab(item.tab || AppTab.POD);
+    setCurrentProjectId(item.id);
     setStage(ProcessStage.COMPLETE);
     setError(null);
     setIsHistoryOpen(false);
@@ -209,6 +198,7 @@ function App() {
     setProcessedImage(null);
     setAnalysis(null);
     setRedesigns(null);
+    setCurrentProjectId(null);
     setRedesignHistory({});
     setRedoHistory({});
 
@@ -237,12 +227,31 @@ function App() {
      setError(errorMessage || "Service currently unavailable.");
   };
 
+  const syncUpdateToSheet = async (updatedList: string[]) => {
+      if (!currentProjectId || !username) return;
+      try {
+          await updateDesignInSheet(currentProjectId, username, updatedList);
+      } catch (e) {
+          console.warn("Could not sync update to sheet", e);
+      }
+  };
+
   const startQuickClean = async (image: string) => {
     try {
         setStage(ProcessStage.CLEANING);
         const cleaned = await cleanupProductImage(image);
         setProcessedImage(cleaned);
         setStage(ProcessStage.COMPLETE);
+        
+        // LUÔN LUÔN LƯU VÀO BE KHI CÓ KẾT QUẢ TỰ ĐỘNG
+        if (currentProjectId) {
+            syncUpdateToSheet([cleaned]);
+        } else {
+            // Khởi tạo bản ghi mới cho tác vụ tách nền tự động
+            sendDataToSheet([cleaned], "Automatic Background & Wire Removal", "Cleaned product isolation", username, "Quick Tools", "N/A")
+              .then(() => fetchCloudHistory()) // Tải lại lịch sử để có ID mới
+              .catch(e => console.error("Logging failed", e));
+        }
     } catch (err: any) {
         console.error(err);
         handleQuotaError(err);
@@ -283,8 +292,11 @@ function App() {
          setRedesigns(redesigns);
          setStage(ProcessStage.COMPLETE);
          
-         const similarity = activeTab === AppTab.TSHIRT ? "50-60% (Breakthrough)" : "Auto";
-         sendDataToSheet(redesigns, analysisResult.redesignPrompt, analysisResult.description || "N/A", username, productType, similarity).catch(e => console.error("Logging failed", e));
+         const similarity = activeTab === AppTab.TSHIRT ? "Breakthrough" : "Auto";
+         // Log initial designs to sheet
+         sendDataToSheet(redesigns, analysisResult.redesignPrompt, analysisResult.description || "N/A", username, productType, similarity)
+           .then(() => fetchCloudHistory())
+           .catch(e => console.error("Logging failed", e));
       }
 
     } catch (err: any) {
@@ -324,6 +336,7 @@ function App() {
       const newRedesigns = [...generatedRedesigns];
       newRedesigns[index] = previousImage;
       setRedesigns(newRedesigns);
+      syncUpdateToSheet(newRedesigns);
   };
 
   const handleRedoRedesign = (index: number) => {
@@ -338,6 +351,7 @@ function App() {
       const newRedesigns = [...generatedRedesigns];
       newRedesigns[index] = nextImage;
       setRedesigns(newRedesigns);
+      syncUpdateToSheet(newRedesigns);
   };
 
   const handleRemix = async (instruction: string) => {
@@ -350,6 +364,7 @@ function App() {
       const newRedesigns = [...generatedRedesigns];
       newRedesigns[selectedRedesignIndex] = newImage;
       setRedesigns(newRedesigns);
+      syncUpdateToSheet(newRedesigns);
     } catch (err: any) {
       handleQuotaError(err);
     } finally {
@@ -364,6 +379,7 @@ function App() {
       const newRedesigns = [...generatedRedesigns];
       newRedesigns[selectedRedesignIndex] = newImage;
       setRedesigns(newRedesigns);
+      syncUpdateToSheet(newRedesigns);
   };
 
   const handleRemoveBackground = async () => {
@@ -376,6 +392,7 @@ function App() {
        const newRedesigns = [...generatedRedesigns];
        newRedesigns[selectedRedesignIndex] = cleanedImage;
        setRedesigns(newRedesigns);
+       syncUpdateToSheet(newRedesigns);
     } catch (err: any) {
        handleQuotaError(err);
     } finally {
@@ -399,6 +416,7 @@ function App() {
       setProcessedImage(null);
       setRedesigns(null);
       setAnalysis(null);
+      setCurrentProjectId(null);
   };
 
   if (isLoadingAuth) {
@@ -409,13 +427,14 @@ function App() {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // Correctly initialize permission checks and fix the missing isMockupAdmin variable
   const isAdmin = permissions === 'ADMIN' || username.trim().toLowerCase() === 'admin';
-  const isMockupManager = permissions === 'MOCKUP_ADMIN';
+  const isMockupAdmin = permissions === 'MOCKUP_ADMIN';
   const isMockupUploader = permissions === 'MOCKUP_UPLOADER';
-  const canAccessAdminPanel = isAdmin || isMockupManager || isMockupUploader;
+  const canAccessAdminPanel = isAdmin || isMockupAdmin || isMockupUploader;
 
-  const canAccessPOD = permissions === 'ALL' || permissions === 'POD' || isAdmin || isMockupManager || isMockupUploader;
-  const canAccessTshirt = permissions === 'ALL' || permissions === 'TSHIRT' || isAdmin || isMockupManager || isMockupUploader;
+  const canAccessPOD = permissions === 'ALL' || permissions === 'POD' || isAdmin || isMockupAdmin || isMockupUploader;
+  const canAccessTshirt = permissions === 'ALL' || permissions === 'TSHIRT' || isAdmin || isMockupAdmin || isMockupUploader;
 
   let mainTitle = "POD Product Reimagination";
   let mainDesc = "Professional AI Design Tool for POD & T-Shirts.";
@@ -444,7 +463,7 @@ function App() {
                 {isAdmin && (
                   <span className="ml-2 px-1.5 py-0.5 bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 rounded text-[10px] font-bold">ADMIN</span>
                 )}
-                {isMockupManager && (
+                {isMockupAdmin && (
                   <span className="ml-2 px-1.5 py-0.5 bg-orange-900/50 text-orange-300 border border-orange-700/50 rounded text-[10px] font-bold">MOCKUP MANAGER</span>
                 )}
                 {isMockupUploader && (
