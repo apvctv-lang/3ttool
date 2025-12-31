@@ -47,8 +47,6 @@ function doPost(e) {
       result = handleGetImageBase64(requestData);
     } else if (action === 'get_designs') {
       result = handleGetDesigns(doc, requestData);
-    } else if (action === 'update_design') {
-      result = handleUpdateDesign(doc, requestData);
     }
 
     return ContentService
@@ -81,45 +79,6 @@ function getOrCreateFolder(name) {
 }
 
 // --- XỬ LÝ DỮ LIỆU THIẾT KẾ ---
-
-function handleUpdateDesign(doc, data) {
-  var sheet = doc.getSheetByName('Designs');
-  if (!sheet) return { status: 'error', message: 'Sheet Designs không tồn tại' };
-  
-  // ID có dạng "sheet_X" với X là chỉ số dòng (1-based) trong mảng dữ liệu (trừ header)
-  var rowIndex = parseInt(data.id.replace('sheet_', '')) + 1;
-  if (isNaN(rowIndex) || rowIndex < 2) return { status: 'error', message: 'ID thiết kế không hợp lệ' };
-
-  var timestamp = new Date();
-  var images = data.images || [];
-  var folder = getOrCreateFolder(FOLDER_NAME);
-  var imageUrls = [];
-  var username = data.username || 'Anonymous';
-
-  for (var i = 0; i < 6; i++) {
-    if (i < images.length && images[i]) {
-      // Nếu là URL Drive cũ thì giữ nguyên, nếu là Base64 thì tải lên mới
-      if (images[i].indexOf("http") === 0) {
-        imageUrls.push(images[i]);
-      } else {
-        try {
-          var base64Data = images[i].split(",")[1] || images[i];
-          var decodedBlob = Utilities.base64Decode(base64Data);
-          var file = folder.createFile(Utilities.newBlob(decodedBlob, "image/png", username + "_Edit_" + (i+1) + "_" + timestamp.getTime() + ".png"));
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          imageUrls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w2500");
-        } catch (err) { imageUrls.push(""); }
-      }
-    } else { imageUrls.push(""); }
-  }
-
-  // Cập nhật lại các cột ảnh (cột 7 đến 12)
-  sheet.getRange(rowIndex, 7, 1, 6).setValues([imageUrls]);
-  // Cập nhật thời gian chỉnh sửa cuối
-  sheet.getRange(rowIndex, 1).setValue(timestamp);
-  
-  return { status: 'success', imageUrls: imageUrls };
-}
 
 function handleGetDesigns(doc, data) {
   var sheet = doc.getSheetByName('Designs');
