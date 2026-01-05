@@ -9,16 +9,15 @@ var MOCKUP_FOLDER_NAME = "ProductPerfect_MockupTemplates";
  */
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  lock.tryLock(30000); // Đợi tối đa 30s để tránh xung đột ghi dữ liệu
+  lock.tryLock(30000); 
 
   try {
     var doc = SPECIFIC_SHEET_ID ? SpreadsheetApp.openById(SPECIFIC_SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-    
     var requestData = JSON.parse(e.postData.contents);
     var action = requestData.action;
     var result = { status: 'error', message: 'Hành động không hợp lệ: ' + action };
 
-    // Router xử lý hành động
+    // --- FULL ROUTER ---
     if (action === 'register') {
       result = handleRegister(doc, requestData);
     } else if (action === 'login') {
@@ -29,6 +28,8 @@ function doPost(e) {
       result = handleHeartbeat(doc, requestData);
     } else if (action === 'log_design') {
       result = handleLogDesign(doc, requestData);
+    } else if (action === 'update_design') {
+      result = handleUpdateDesign(doc, requestData);
     } else if (action === 'save_config') {
       result = handleSaveConfig(doc, requestData);
     } else if (action === 'get_config') {
@@ -68,100 +69,12 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// --- HÀM TIỆN ÍCH DRIVE ---
+// --- HÀM TIỆN ÍCH ---
 
 function getOrCreateFolder(name) {
   var folders = DriveApp.getFoldersByName(name);
-  if (folders.hasNext()) {
-    return folders.next();
-  }
+  if (folders.hasNext()) return folders.next();
   return DriveApp.createFolder(name);
-}
-
-// --- XỬ LÝ DỮ LIỆU THIẾT KẾ ---
-
-function handleGetDesigns(doc, data) {
-  var sheet = doc.getSheetByName('Designs');
-  if (!sheet) return { status: 'success', data: [] };
-  var values = sheet.getDataRange().getValues();
-  var designs = [];
-  var isAdmin = data.isAdmin;
-  var username = data.username;
-  
-  for (var i = 1; i < values.length; i++) {
-    var owner = values[i][1];
-    if (isAdmin || owner === username) {
-      designs.push({
-        id: "sheet_" + i,
-        timestamp: values[i][0],
-        username: owner,
-        productType: values[i][2],
-        similarity: values[i][3],
-        prompt: values[i][4],
-        description: values[i][5],
-        images: [values[i][6], values[i][7], values[i][8], values[i][9], values[i][10], values[i][11]].filter(function(v) { return !!v && v.indexOf("http") === 0; })
-      });
-    }
-  }
-  return { status: 'success', data: designs.reverse() }; 
-}
-
-function handleGetImageBase64(data) {
-  try {
-    var url = data.url;
-    var fileId = "";
-    
-    if (url.indexOf("id=") !== -1) {
-      fileId = url.split("id=")[1].split("&")[0];
-    } else if (url.indexOf("/file/d/") !== -1) {
-      fileId = url.split("/file/d/")[1].split("/")[0];
-    } else if (url.indexOf("/d/") !== -1) {
-      fileId = url.split("/d/")[1].split("/")[0];
-    } else {
-      fileId = url;
-    }
-    
-    var file = DriveApp.getFileById(fileId);
-    var blob = file.getBlob();
-    var base64 = Utilities.base64Encode(blob.getBytes());
-    var mime = blob.getContentType();
-    
-    return { 
-      status: 'success', 
-      base64: "data:" + mime + ";base64," + base64 
-    };
-  } catch (e) {
-    try {
-      var response = UrlFetchApp.fetch(data.url);
-      var blob = response.getBlob();
-      var base64 = Utilities.base64Encode(blob.getBytes());
-      return { status: 'success', base64: "data:" + blob.getContentType() + ";base64," + base64 };
-    } catch (err) {
-      return { status: 'error', message: "Không thể lấy Base64 của ảnh: " + e.toString() };
-    }
-  }
-}
-
-// --- QUẢN LÝ NGƯỜI DÙNG & CẤU HÌNH ---
-
-function handleSaveConfig(doc, data) {
-  var sheet = doc.getSheetByName('Config') || doc.insertSheet('Config');
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['System_API_Key']); 
-  }
-  sheet.getRange('A2').setValue(data.apiKey);
-  return { status: 'success', message: 'Hệ thống đã cập nhật API Key!' };
-}
-
-function handleGetConfig(doc) {
-  var key = getSystemApiKey(doc);
-  return { status: 'success', apiKey: key };
-}
-
-function getSystemApiKey(doc) {
-  var sheet = doc.getSheetByName('Config');
-  if (!sheet || sheet.getLastRow() < 2) return "";
-  return sheet.getRange('A2').getValue();
 }
 
 function logAccess(doc, username, action, ip) {
@@ -174,39 +87,13 @@ function logAccess(doc, username, action, ip) {
   } catch (e) {}
 }
 
-function handleGetUsers(doc, data) {
-  var sheet = doc.getSheetByName('Users');
-  if (!sheet) return { status: 'error', message: 'Không tìm thấy bảng Users.' };
-  var users = sheet.getDataRange().getValues();
-  var userList = [];
-  for (var i = 1; i < users.length; i++) {
-    userList.push({
-      username: users[i][0],
-      createdAt: users[i][2],
-      permissions: users[i][3] || 'PENDING',
-      lastIp: users[i][4] || '',
-      lastLogin: users[i][5] || '',
-      lastActive: users[i][6] || '',
-      currentStatus: users[i][7] || 'Offline'
-    });
-  }
-  return { status: 'success', users: userList };
+function getSystemApiKey(doc) {
+  var sheet = doc.getSheetByName('Config');
+  if (!sheet || sheet.getLastRow() < 2) return "";
+  return sheet.getRange('A2').getValue();
 }
 
-function handleUpdatePermission(doc, data) {
-  var sheet = doc.getSheetByName('Users');
-  if (!sheet) return { status: 'error', message: 'Lỗi dữ liệu.' };
-  var targetUser = data.targetUser;
-  var newPermission = data.newPermission;
-  var users = sheet.getDataRange().getValues();
-  for (var i = 1; i < users.length; i++) {
-    if (users[i][0] == targetUser) {
-      sheet.getRange(i + 1, 4).setValue(newPermission);
-      return { status: 'success', message: 'Đã cập nhật quyền cho ' + targetUser };
-    }
-  }
-  return { status: 'error', message: 'Không tìm thấy người dùng.' };
-}
+// --- XỬ LÝ NGƯỜI DÙNG & AUTH ---
 
 function handleRegister(doc, data) {
   var sheet = doc.getSheetByName('Users') || doc.insertSheet('Users');
@@ -215,7 +102,7 @@ function handleRegister(doc, data) {
   }
   var username = data.username ? data.username.toString().trim() : "";
   var password = data.password ? data.password.toString().trim() : "";
-  if (!username || !password) return { status: 'error', message: 'Thiếu Username hoặc Password.' };
+  if (!username || !password) return { status: 'error', message: 'Thiếu thông tin đăng ký.' };
   
   var users = sheet.getDataRange().getValues();
   for (var i = 1; i < users.length; i++) {
@@ -224,15 +111,16 @@ function handleRegister(doc, data) {
   
   sheet.appendRow([username, password, new Date(), 'PENDING', '', '', '', 'Offline']);
   logAccess(doc, username, 'Register', data.ip);
-  return { status: 'success', message: 'Đăng ký thành công! Đang chờ Admin duyệt.' };
+  return { status: 'success', message: 'Đăng ký thành công!' };
 }
 
 function handleLogin(doc, data) {
   var sheet = doc.getSheetByName('Users');
-  if (!sheet) return { status: 'error', message: 'Hệ thống chưa có người dùng.' };
+  if (!sheet) return { status: 'error', message: 'Hệ thống chưa khởi tạo.' };
   var username = data.username ? data.username.toString().trim() : "";
   var password = data.password ? data.password.toString().trim() : "";
   var users = sheet.getDataRange().getValues();
+  
   for (var i = 1; i < users.length; i++) {
     if (users[i][0] == username && users[i][1] == password) {
       var perms = users[i][3] || "PENDING";
@@ -282,7 +170,7 @@ function handleHeartbeat(doc, data) {
   return { status: 'error' };
 }
 
-// --- LOGGING VÀ LƯU TRỮ HÌNH ẢNH ---
+// --- QUẢN LÝ THIẾT KẾ ---
 
 function handleLogDesign(doc, data) {
   var sheet = doc.getSheetByName('Designs') || doc.insertSheet('Designs');
@@ -304,20 +192,105 @@ function handleLogDesign(doc, data) {
         var file = folder.createFile(Utilities.newBlob(decodedBlob, "image/png", username + "_Design_" + (i+1) + "_" + timestamp.getTime() + ".png"));
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         imageUrls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w2500");
-      } catch (err) { imageUrls.push("Error: " + err.toString()); }
-    } else { imageUrls.push(""); }
+      } catch (err) { imageUrls.push("Error"); }
+    } else imageUrls.push("");
   }
   
   sheet.appendRow([timestamp, username, data.productType || 'Unknown', data.similarity || 'N/A', data.prompt, data.description, imageUrls[0], imageUrls[1], imageUrls[2], imageUrls[3], imageUrls[4], imageUrls[5]]);
-  return { status: 'success' };
+  var lastRow = sheet.getLastRow();
+  return { status: 'success', designId: "sheet_" + (lastRow - 1) };
+}
+
+function handleUpdateDesign(doc, data) {
+  var sheet = doc.getSheetByName('Designs');
+  if (!sheet) return { status: 'error', message: 'Không tìm thấy bảng thiết kế.' };
+  
+  var designId = data.designId; // "sheet_X"
+  if (!designId) return { status: 'error', message: 'Thiếu ID thiết kế.' };
+
+  var rowIndex = parseInt(designId.split("_")[1]);
+  var imageColIndex = 6 + (data.imageIndex || 0); // Image 1 = Col G (index 6)
+  
+  var folder = getOrCreateFolder(FOLDER_NAME);
+  var base64Data = data.image.split(",")[1] || data.image;
+  var decodedBlob = Utilities.base64Decode(base64Data);
+  var file = folder.createFile(Utilities.newBlob(decodedBlob, "image/png", data.username + "_Edit_" + new Date().getTime() + ".png"));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var url = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w2500";
+  
+  sheet.getRange(rowIndex + 1, imageColIndex + 1).setValue(url);
+  return { status: 'success', url: url };
+}
+
+function handleGetDesigns(doc, data) {
+  var sheet = doc.getSheetByName('Designs');
+  if (!sheet) return { status: 'success', data: [] };
+  var values = sheet.getDataRange().getValues();
+  var designs = [];
+  var isAdmin = data.isAdmin;
+  var username = data.username;
+  
+  for (var i = 1; i < values.length; i++) {
+    var owner = values[i][1];
+    if (isAdmin || owner === username) {
+      designs.push({
+        id: "sheet_" + i,
+        timestamp: values[i][0],
+        username: owner,
+        productType: values[i][2],
+        similarity: values[i][3],
+        prompt: values[i][4],
+        description: values[i][5],
+        images: [values[i][6], values[i][7], values[i][8], values[i][9], values[i][10], values[i][11]].filter(function(v) { return !!v && v.indexOf("http") === 0; })
+      });
+    }
+  }
+  return { status: 'success', data: designs.reverse() }; 
+}
+
+// --- CẤU HÌNH & HỆ THỐNG ---
+
+function handleSaveConfig(doc, data) {
+  var sheet = doc.getSheetByName('Config') || doc.insertSheet('Config');
+  if (sheet.getLastRow() === 0) sheet.appendRow(['System_API_Key']); 
+  sheet.getRange('A2').setValue(data.apiKey);
+  return { status: 'success', message: 'API Key đã được cập nhật!' };
+}
+
+function handleGetConfig(doc) {
+  var key = getSystemApiKey(doc);
+  return { status: 'success', apiKey: key };
+}
+
+function handleGetUsers(doc, data) {
+  var sheet = doc.getSheetByName('Users');
+  if (!sheet) return { status: 'error', message: 'Lỗi sheet.' };
+  var users = sheet.getDataRange().getValues();
+  var userList = [];
+  for (var i = 1; i < users.length; i++) {
+    userList.push({ username: users[i][0], createdAt: users[i][2], permissions: users[i][3] || 'PENDING', lastIp: users[i][4] || '', lastLogin: users[i][5] || '', lastActive: users[i][6] || '', currentStatus: users[i][7] || 'Offline' });
+  }
+  return { status: 'success', users: userList };
+}
+
+function handleUpdatePermission(doc, data) {
+  var sheet = doc.getSheetByName('Users');
+  if (!sheet) return { status: 'error' };
+  var targetUser = data.targetUser;
+  var newPermission = data.newPermission;
+  var users = sheet.getDataRange().getValues();
+  for (var i = 1; i < users.length; i++) {
+    if (users[i][0] == targetUser) {
+      sheet.getRange(i + 1, 4).setValue(newPermission);
+      return { status: 'success' };
+    }
+  }
+  return { status: 'error' };
 }
 
 function handleSaveMockup(doc, data) {
   var sheet = doc.getSheetByName('MockupTemplates') || doc.insertSheet('MockupTemplates');
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['StoreName', 'MockupName', 'ImageUrl', 'CreatedBy', 'Timestamp']); 
-  }
-  
+  if (sheet.getLastRow() === 0) sheet.appendRow(['StoreName', 'MockupName', 'ImageUrl', 'CreatedBy', 'Timestamp']); 
   var folder = getOrCreateFolder(MOCKUP_FOLDER_NAME);
   try {
     var base64Data = data.image.split(",")[1] || data.image;
@@ -335,18 +308,13 @@ function handleGetMockups(doc) {
   if (!sheet) return { status: 'success', data: [] };
   var values = sheet.getDataRange().getValues();
   var mockups = [];
-  for (var i = 1; i < values.length; i++) {
-    mockups.push({ storeName: values[i][0], name: values[i][1], url: values[i][2], base64: null }); 
-  }
+  for (var i = 1; i < values.length; i++) mockups.push({ storeName: values[i][0], name: values[i][1], url: values[i][2], base64: null }); 
   return { status: 'success', data: mockups };
 }
 
 function handleLogFinalMockup(doc, data) {
   var sheet = doc.getSheetByName('FinalMockups') || doc.insertSheet('FinalMockups');
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Time', 'User', 'Design Name', 'Result Image URL']); 
-  }
-  
+  if (sheet.getLastRow() === 0) sheet.appendRow(['Time', 'User', 'Design Name', 'Result Image URL']); 
   var folder = getOrCreateFolder(FOLDER_NAME);
   try {
     var base64Data = data.image.split(",")[1] || data.image;
@@ -357,4 +325,30 @@ function handleLogFinalMockup(doc, data) {
     sheet.appendRow([new Date(), data.username, data.designName || 'Unnamed', url]);
     return { status: 'success', url: url };
   } catch (err) { return { status: 'error', message: err.toString() }; }
+}
+
+function handleGetImageBase64(data) {
+  try {
+    var url = data.url;
+    var fileId = "";
+    if (url.indexOf("id=") !== -1) fileId = url.split("id=")[1].split("&")[0];
+    else if (url.indexOf("/file/d/") !== -1) fileId = url.split("/file/d/")[1].split("/")[0];
+    else if (url.indexOf("/d/") !== -1) fileId = url.split("/d/")[1].split("/")[0];
+    else fileId = url;
+    
+    var file = DriveApp.getFileById(fileId);
+    var blob = file.getBlob();
+    var base64 = Utilities.base64Encode(blob.getBytes());
+    var mime = blob.getContentType();
+    return { status: 'success', base64: "data:" + mime + ";base64," + base64 };
+  } catch (e) {
+    try {
+      var response = UrlFetchApp.fetch(data.url);
+      var blob = response.getBlob();
+      var base64 = Utilities.base64Encode(blob.getBytes());
+      return { status: 'success', base64: "data:" + blob.getContentType() + ";base64," + base64 };
+    } catch (err) {
+      return { status: 'error', message: "Error: " + e.toString() };
+    }
+  }
 }

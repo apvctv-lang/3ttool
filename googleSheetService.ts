@@ -13,6 +13,8 @@ interface ApiResponse {
   data?: any;
   url?: string;
   base64?: string;
+  designId?: string; // Synchronized property
+  apiKey?: string;   // Synchronized property
 }
 
 export const getPublicIP = async (): Promise<string> => {

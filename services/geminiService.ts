@@ -1,31 +1,19 @@
 
 // @google/genai SDK implementation for product analysis and image generation.
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { ProductAnalysis, DesignMode, RopeType, AppTab } from "../types";
 
-/**
- * Hàm làm sạch chuỗi API Key, hỗ trợ trường hợp dán nhiều key cách nhau bởi dấu phẩy hoặc xuống dòng.
- * Việc này ngăn chặn lỗi "Invalid value" trong Headers khi gửi request lên Google API.
- */
 const getCleanKey = (input: string | null | undefined): string => {
   if (!input) return "";
-  // Tách chuỗi theo xuống dòng, dấu phẩy, dấu chấm phẩy
   const keys = input.split(/[\n\r,;]+/).map(k => k.trim()).filter(k => k.length > 20);
   if (keys.length === 0) return "";
-  // Chọn ngẫu nhiên một key trong danh sách để tận dụng quota (load balancing)
   return keys[Math.floor(Math.random() * keys.length)];
 };
 
-/**
- * Ưu tiên sử dụng API Key từ cấu hình Admin nếu có.
- */
 const getClient = () => {
   const systemKey = localStorage.getItem('app_system_key');
   const envKey = process.env.API_KEY;
-  
-  // Xử lý làm sạch key (loại bỏ xuống dòng gây lỗi Headers)
   const finalKey = getCleanKey(systemKey || envKey);
-  
   return new GoogleGenAI({ apiKey: finalKey });
 };
 
@@ -33,79 +21,33 @@ const stripBase64Prefix = (base64: string) => {
   return base64.replace(/^data:image\/[a-z]+;base64,/, "");
 };
 
-/**
- * Helper to convert a remote URL to Base64 avoiding CORS issues where possible using Image objects.
- * CẬP NHẬT: Luôn sử dụng image/png để bảo toàn Alpha channel.
- */
-const urlToBase64 = async (url: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = url;
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject("Could not create canvas context");
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/png")); // Luôn dùng PNG
-    };
-    img.onerror = () => {
-      if (url.includes("drive.google.com")) {
-          const newUrl = url.includes("&sz=") ? url.replace(/sz=w\d+/, "sz=w1001") : url; 
-          if(newUrl !== url) {
-              img.src = newUrl;
-              return;
-          }
-      }
-      reject(`Failed to load image at ${url}`);
-    };
-  });
-};
-
-export const cleanJsonString = (text: string) => {
-    return text.replace(/```json\s*|\s*```/g, "").trim();
-};
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-export const setKeyPools = (keys: string[]) => {
-  console.debug("External key management is disabled. Key is handled via Admin System Settings.");
-};
-
 export const validateToken = async (tokenInput?: string): Promise<boolean> => {
   try {
-    // Làm sạch tokenInput nếu có nhiều key được dán vào ô test
     const keyToValidate = tokenInput ? getCleanKey(tokenInput) : "";
     const ai = keyToValidate ? new GoogleGenAI({ apiKey: keyToValidate }) : getClient();
-    
     await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "Connectivity test.",
     });
     return true;
   } catch (err: any) {
-    console.error("Gemini API connection failed:", err);
     throw err;
   }
 };
 
 /**
- * Chức năng xóa nền: Đảm bảo trả về PNG trong suốt (Alpha channel).
+ * Xử lý tách nền trắng và xóa dây treo theo yêu cầu
  */
 export const cleanupProductImage = async (imageBase64: string): Promise<string> => {
   const ai = getClient();
-  const prompt = `Task: Professional Background Removal.
-  1. Detect the main subject/artwork.
-  2. Remove ALL surrounding background, supporting elements, wires, and shadows.
-  3. IMPORTANT: The output MUST be a TRANSPARENT PNG with an ALPHA CHANNEL (void pixels).
-  4. DO NOT fill with white, gray, or any solid color.
-  5. Remove any simulated checkerboard patterns.
-  6. Output the isolated graphic only.`;
+  const prompt = `HÃY THỰC HIỆN CÁC BƯỚC SAU VỚI ĐỘ CHÍNH XÁC TỐI ĐA:
+  1. Nhận diện sản phẩm chính trong ảnh.
+  2. XÓA BỎ HOÀN TOÀN nền và tất cả bối cảnh xung quanh.
+  3. QUAN TRỌNG: XÓA BỎ TOÀN BỘ dây treo, móc treo, hoặc giá đỡ có trong ảnh.
+  4. LƯU Ý CỰC KỲ QUAN TRỌNG: KHÔNG ĐƯỢC XÓA các chi tiết màu trắng (ngôi sao, tuyết, chữ trắng...) nằm BÊN TRONG ranh giới thiết kế. Hãy giữ nguyên chúng. Chỉ xóa vùng nền phía ngoài ranh giới sản phẩm.
+  5. Chuyển nền ngoài sang TRẮNG TUYỆT ĐỐI (#FFFFFF).
+  6. Tuyệt đối không để lại khung vuông hay họa tiết ô vuông (checkerboard) của AI.
+  7. Trả về duy nhất 1 ảnh PNG chất lượng cao.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
@@ -133,40 +75,75 @@ export const analyzeProductDesign = async (
   ): Promise<ProductAnalysis> => {
     
     const ai = getClient();
-    const activeModel = 'gemini-3-pro-preview';
-
-    let prompt = "";
+    let systemInstruction = "";
+    
     if (activeTab === AppTab.TSHIRT) {
-        prompt = `Analyze this T-shirt graphic. Return ONLY JSON: 
-        { "description": "short description", "designCritique": "critique", "detectedComponents": ["list"], "redesignPrompt": "innovative isolated artwork, strictly transparent background, unified design" }`;
-    } else {
-        prompt = `Analyze this POD design. Return ONLY JSON: 
-        { "description": "short description", "designCritique": "critique", "detectedComponents": ["list"], "redesignPrompt": "isolated design on white background, high quality" }`;
+        systemInstruction = `You are a world-class senior fashion designer and creative director for high-end streetwear and premium apparel brands.
+Your mission: Redesign the input T-Shirt into a significantly MORE BEAUTIFUL, superior, and aesthetically perfect masterpiece.
+
+CORE TASK:
+1. Extract the "Design DNA" (the soul, emotion, and aesthetic core) of the original shirt.
+2. Elevate this DNA into a high-fashion principle system.
+3. Propose a NEW design that is visually stunning, balanced, and premium.
+
+AESTHETIC GUIDELINES:
+- Focus on masterpiece-level composition and visual harmony.
+- Use advanced typography and sophisticated graphic placements.
+- Ensure the result feels "Expensive", "Trendy", and "Iconic".
+- Preserve the brand essence but discard any amateur or cluttered elements from the original.
+
+MANDATORY PROCESS:
+1. DESIGN DNA EXTRACTION: Analyze emotional tone, attitude, and brand energy.
+2. MASTERPIECE PRINCIPLES: Define 5-7 abstract rules for visual excellence based on the DNA.
+3. THE REDESIGN: Conceptualize a superior garment that outshines the original in beauty and market appeal.
+
+OUTPUT REQUIREMENTS:
+You MUST return a JSON object with the exact keys: description, designCritique, detectedComponents, and redesignPrompt.
+In 'designCritique', provide a clear, non-JSON string description of the aesthetic evolution.`;
     }
+
+    const promptText = activeTab === AppTab.TSHIRT 
+        ? "Analyze the T-Shirt's core soul and redesign it into a beautiful high-fashion masterpiece. Provide the full redesign concept and prompt."
+        : `Analyze this design for conceptual enhancement. Provide detected components and a redesign prompt.`;
     
     const response = await ai.models.generateContent({
-        model: activeModel,
+        model: 'gemini-3-pro-preview',
         contents: {
           parts: [
               { inlineData: { mimeType: "image/png", data: stripBase64Prefix(imageBase64) } },
-              { text: prompt }
+              { text: promptText }
           ]
         },
-        config: { responseMimeType: "application/json" }
+        config: { 
+            systemInstruction: activeTab === AppTab.TSHIRT ? systemInstruction : undefined,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    description: { type: Type.STRING, description: "Short title for the new concept" },
+                    designCritique: { type: Type.STRING, description: "A detailed paragraph explaining the design DNA and aesthetic strategy" },
+                    detectedComponents: { 
+                        type: Type.ARRAY, 
+                        items: { type: Type.STRING },
+                        description: "List of key design principles extracted"
+                    },
+                    redesignPrompt: { type: Type.STRING, description: "Detailed prompt for generating the new masterpiece design" }
+                },
+                required: ["description", "designCritique", "detectedComponents", "redesignPrompt"]
+            }
+        }
     });
 
     const text = response.text || "{}";
-    const rawResult = JSON.parse(cleanJsonString(text));
+    const rawResult = JSON.parse(text.replace(/```json\s*|\s*```/g, "").trim());
 
     return { 
-        description: rawResult.description || "No description.", 
+        description: rawResult.description || "Masterpiece Redesign", 
         designCritique: typeof rawResult.designCritique === 'string' ? rawResult.designCritique : JSON.stringify(rawResult.designCritique), 
         detectedComponents: Array.isArray(rawResult.detectedComponents) ? rawResult.detectedComponents : [],
         redesignPrompt: rawResult.redesignPrompt || ""
     };
 };
-
-export const extractDesignElements = async (imageBase64: string): Promise<string[]> => [];
 
 export const generateProductRedesigns = async (
     basePrompt: string,
@@ -179,22 +156,22 @@ export const generateProductRedesigns = async (
     originalImage?: string 
   ): Promise<string[]> => {
     
-    let finalPrompt = "";
+    const ai = getClient();
     let targetModel = 'gemini-3-pro-image-preview';
     let targetConfig: any = { imageConfig: { imageSize: '2K', aspectRatio: '1:1' } };
+    let finalPrompt = "";
 
     if (activeTab === AppTab.TSHIRT) {
         targetModel = 'gemini-2.5-flash-image';
         targetConfig = { imageConfig: { aspectRatio: '1:1' } };
-        finalPrompt = `TOTAL BREAKTHROUGH DESIGN: Create a NEW unified graphic. 
-        KEEP ONLY 50-60% of original concept while radically evolving the rest.
-        MANDATORY TECHNICAL REQUIREMENTS:
-        1. NO BACKGROUND: Output MUST be an isolated graphic on a NULL TRANSPARENT void.
-        2. NO CHECKERBOARD: Absolutely DO NOT include gray/white checkered patterns to represent transparency.
-        3. NO SQUARE: The design must NOT be placed on a white box or solid square canvas.
-        4. NO MOCKUP ELEMENTS: No shirts, no models, no hangers.
-        5. PNG COMPATIBLE: Sharp edges, alpha channel transparency.
-        Subject: ${basePrompt}. Note: ${userNotes}`;
+        finalPrompt = `ACT AS A WORLD-CLASS FASHION DESIGNER. CREATE A SUPREMELY BEAUTIFUL, HIGH-END T-SHIRT GRAPHIC BASED ON THIS MASTERPIECE PROMPT: ${basePrompt}. 
+        STRICT RULES: 
+        1. THE RESULT MUST BE STUNNINGLY BEAUTIFUL AND AESTHETICALLY SUPERIOR.
+        2. Isolated design on PURE WHITE BACKGROUND (#FFFFFF). 
+        3. Professional composition, balanced hierarchy, and sharp details.
+        4. Strategy: ${userNotes}. 
+        5. MUST feel like an elite version of the same brand system.
+        6. NO HANGERS, NO WIRES, NO MOCKUP ELEMENTS. JUST THE ARTWORK.`;
     } else {
         finalPrompt = `Isolated design graphic on PURE WHITE background. Subject: ${basePrompt}. ${userNotes}`;
     }
@@ -203,14 +180,13 @@ export const generateProductRedesigns = async (
     const results: string[] = [];
 
     for(let i=0; i<count; i++) {
-        await sleep(500); 
+        await new Promise(resolve => setTimeout(resolve, 400));
         try {
-            const ai = getClient();
             const response = await ai.models.generateContent({
                 model: targetModel,
                 contents: { 
                     parts: [
-                        ...(originalImage ? [{ inlineData: { mimeType: "image/png", data: stripBase64Prefix(originalImage) } }] : []),
+                        ...(originalImage && activeTab !== AppTab.TSHIRT ? [{ inlineData: { mimeType: "image/png", data: stripBase64Prefix(originalImage) } }] : []),
                         { text: finalPrompt }
                     ]
                 },
@@ -218,16 +194,11 @@ export const generateProductRedesigns = async (
             });
             for (const part of response.candidates?.[0]?.content?.parts || []) {
                 if (part.inlineData && part.inlineData.data) {
-                    let base64 = `data:image/png;base64,${part.inlineData.data}`;
-                    if (activeTab === AppTab.TSHIRT) {
-                        try { base64 = await cleanupProductImage(base64); } catch (e) {}
-                    }
-                    results.push(base64);
+                    results.push(`data:image/png;base64,${part.inlineData.data}`);
                     break;
                 }
             }
         } catch (err: any) {
-             console.warn("Generation error:", err);
              if (targetModel === 'gemini-3-pro-image-preview') throw err;
         }
     }
@@ -241,38 +212,15 @@ export const remixProductImage = async (imageBase64: string, instruction: string
         contents: {
             parts: [
                 { inlineData: { mimeType: "image/png", data: stripBase64Prefix(imageBase64) } },
-                { text: `Remix design: ${instruction}. STRICTLY transparent background PNG.` }
-            ]
-        }
-    });
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData && part.inlineData.data) {
-            return await cleanupProductImage(`data:image/png;base64,${part.inlineData.data}`);
-        }
-    }
-    throw new Error("Remix failed.");
-};
-
-export const applyDesignToMockupTemplate = async (designBase64: string, mockupTemplateUrl: string): Promise<string> => {
-    const ai = getClient();
-    const templateBase64 = await urlToBase64(mockupTemplateUrl);
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-            parts: [
-                { inlineData: { mimeType: "image/png", data: stripBase64Prefix(designBase64) } },
-                { inlineData: { mimeType: "image/png", data: stripBase64Prefix(templateBase64) } },
-                { text: "Map graphic to product center naturally." }
+                { text: `Remix design: ${instruction}. Output isolated PNG on PURE WHITE BACKGROUND. Ensure high aesthetic beauty.` }
             ]
         }
     });
     for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData && part.inlineData.data) return `data:image/png;base64,${part.inlineData.data}`;
     }
-    throw new Error("Failed to apply design.");
+    throw new Error("Remix failed.");
 };
 
 export const detectAndSplitCharacters = async (imageBase64: string): Promise<string[]> => [];
-export const generateRandomMockup = async (imageBase64: string): Promise<string> => imageBase64; 
-export const generateSmartMockup = async (imageBase64: string): Promise<string> => imageBase64;
-export const generateSmartMockupBatch = async (imageBase64: string): Promise<string[]> => [];
+export const generateRandomMockup = async (imageBase64: string): Promise<string> => imageBase64;

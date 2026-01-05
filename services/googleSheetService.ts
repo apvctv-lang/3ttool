@@ -13,7 +13,8 @@ interface ApiResponse {
   data?: any;
   url?: string;
   base64?: string;
-  apiKey?: string;
+  designId?: string;
+  apiKey?: string; // Fix: Added apiKey property to ApiResponse to resolve AdminDashboard errors.
 }
 
 export const getPublicIP = async (): Promise<string> => {
@@ -156,7 +157,7 @@ export const sendDataToSheet = async (
   username: string,
   productType: string,
   similarity: string 
-): Promise<void> => {
+): Promise<ApiResponse> => {
   const result = await callScript({
     action: 'log_design',
     username: username,
@@ -167,9 +168,22 @@ export const sendDataToSheet = async (
     similarity: similarity 
   });
   
-  if (result.status === 'error') {
-      console.warn("Logging failed:", result.message);
-  }
+  return result;
+};
+
+export const updateDesignInSheet = async (
+    username: string,
+    designId: string,
+    imageIndex: number,
+    newImageBase64: string
+): Promise<ApiResponse> => {
+    return callScript({
+        action: 'update_design',
+        username,
+        designId,
+        imageIndex,
+        image: newImageBase64
+    });
 };
 
 export const saveMockupToSheet = async (storeName: string, mockupName: string, imageBase64: string, username: string): Promise<ApiResponse> => {
