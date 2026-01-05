@@ -1,7 +1,6 @@
 
-// @google/genai SDK implementation for product analysis and image generation.
 import { GoogleGenAI, Type } from "@google/genai";
-import { ProductAnalysis, DesignMode, RopeType, AppTab } from "../types";
+import { ProductAnalysis, DesignMode, RopeType, AppTab, RetentionLevel } from "../types";
 
 const getCleanKey = (input: string | null | undefined): string => {
   if (!input) return "";
@@ -35,9 +34,6 @@ export const validateToken = async (tokenInput?: string): Promise<boolean> => {
   }
 };
 
-/**
- * Xử lý tách nền trắng và xóa dây treo theo yêu cầu
- */
 export const cleanupProductImage = async (imageBase64: string): Promise<string> => {
   const ai = getClient();
   const prompt = `HÃY THỰC HIỆN CÁC BƯỚC SAU VỚI ĐỘ CHÍNH XÁC TỐI ĐA:
@@ -71,39 +67,34 @@ export const analyzeProductDesign = async (
     imageBase64: string, 
     productType: string,
     designMode: DesignMode,
-    activeTab: AppTab = AppTab.POD
+    activeTab: AppTab = AppTab.POD,
+    retention: RetentionLevel = '40%'
   ): Promise<ProductAnalysis> => {
     
     const ai = getClient();
     let systemInstruction = "";
     
     if (activeTab === AppTab.TSHIRT) {
-        systemInstruction = `You are a world-class senior fashion designer and creative director for high-end streetwear and premium apparel brands.
-Your mission: Redesign the input T-Shirt into a significantly MORE BEAUTIFUL, superior, and aesthetically perfect masterpiece.
+        systemInstruction = `You are a world-class senior fashion designer.
+MISSION: Redesign the input into a FLAT GRAPHIC MASTERPIECE.
+RETENTION STRATEGY: You must keep exactly ${retention} of the original aesthetic/layout vibe.
+
+- If 20%: Be revolutionary. Change 80% of the composition. Only keep the soul.
+- If 40%: Creative remix. Keep main structure but reinvent motifs.
+- If 60%+: Evolutionary polish. Keep layout identical, upgrade quality/details only.
 
 CORE TASK:
-1. Extract the "Design DNA" (the soul, emotion, and aesthetic core) of the original shirt.
-2. Elevate this DNA into a high-fashion principle system.
-3. Propose a NEW design that is visually stunning, balanced, and premium.
+1. Extract Design DNA.
+2. Define Masterpiece Principles.
+3. Propose NEW FLAT GRAPHIC ARTWORK.
 
-AESTHETIC GUIDELINES:
-- Focus on masterpiece-level composition and visual harmony.
-- Use advanced typography and sophisticated graphic placements.
-- Ensure the result feels "Expensive", "Trendy", and "Iconic".
-- Preserve the brand essence but discard any amateur or cluttered elements from the original.
-
-MANDATORY PROCESS:
-1. DESIGN DNA EXTRACTION: Analyze emotional tone, attitude, and brand energy.
-2. MASTERPIECE PRINCIPLES: Define 5-7 abstract rules for visual excellence based on the DNA.
-3. THE REDESIGN: Conceptualize a superior garment that outshines the original in beauty and market appeal.
-
-OUTPUT REQUIREMENTS:
-You MUST return a JSON object with the exact keys: description, designCritique, detectedComponents, and redesignPrompt.
-In 'designCritique', provide a clear, non-JSON string description of the aesthetic evolution.`;
+RULES:
+- NO mockups, NO t-shirts, NO bodies. ONLY 2D Artwork.
+- Outcome must be "Expensive", "Iconic", and "Aesthetically Perfect".`;
     }
 
     const promptText = activeTab === AppTab.TSHIRT 
-        ? "Analyze the T-Shirt's core soul and redesign it into a beautiful high-fashion masterpiece. Provide the full redesign concept and prompt."
+        ? `Analyze the design's soul and redesign it into a beautiful flat graphic artwork with ${retention} similarity to the original structure.`
         : `Analyze this design for conceptual enhancement. Provide detected components and a redesign prompt.`;
     
     const response = await ai.models.generateContent({
@@ -153,7 +144,8 @@ export const generateProductRedesigns = async (
     productType: string,
     useUltraFlag: boolean,
     activeTab: AppTab = AppTab.POD,
-    originalImage?: string 
+    originalImage?: string,
+    retention: RetentionLevel = '40%'
   ): Promise<string[]> => {
     
     const ai = getClient();
@@ -164,14 +156,13 @@ export const generateProductRedesigns = async (
     if (activeTab === AppTab.TSHIRT) {
         targetModel = 'gemini-2.5-flash-image';
         targetConfig = { imageConfig: { aspectRatio: '1:1' } };
-        finalPrompt = `ACT AS A WORLD-CLASS FASHION DESIGNER. CREATE A SUPREMELY BEAUTIFUL, HIGH-END T-SHIRT GRAPHIC BASED ON THIS MASTERPIECE PROMPT: ${basePrompt}. 
+        finalPrompt = `CREATE A FLAT 2D GRAPHIC ARTWORK. PROMPT: ${basePrompt}. 
         STRICT RULES: 
-        1. THE RESULT MUST BE STUNNINGLY BEAUTIFUL AND AESTHETICALLY SUPERIOR.
-        2. Isolated design on PURE WHITE BACKGROUND (#FFFFFF). 
-        3. Professional composition, balanced hierarchy, and sharp details.
-        4. Strategy: ${userNotes}. 
-        5. MUST feel like an elite version of the same brand system.
-        6. NO HANGERS, NO WIRES, NO MOCKUP ELEMENTS. JUST THE ARTWORK.`;
+        1. RETENTION LEVEL: ${retention}. Adhere strictly to this similarity level to original image.
+        2. FLAT ARTWORK ONLY. No t-shirts, no mockups.
+        3. PURE WHITE BACKGROUND (#FFFFFF). 
+        4. Aesthetics: Elite, Expensive, Iconic.
+        5. Strategy: ${userNotes}.`;
     } else {
         finalPrompt = `Isolated design graphic on PURE WHITE background. Subject: ${basePrompt}. ${userNotes}`;
     }
@@ -212,7 +203,7 @@ export const remixProductImage = async (imageBase64: string, instruction: string
         contents: {
             parts: [
                 { inlineData: { mimeType: "image/png", data: stripBase64Prefix(imageBase64) } },
-                { text: `Remix design: ${instruction}. Output isolated PNG on PURE WHITE BACKGROUND. Ensure high aesthetic beauty.` }
+                { text: `Remix design: ${instruction}. Output isolated FLAT 2D GRAPHIC ARTWORK on PURE WHITE BACKGROUND.` }
             ]
         }
     });

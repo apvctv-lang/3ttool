@@ -15,6 +15,7 @@ interface ApiResponse {
   base64?: string;
   designId?: string;
   apiKey?: string; // Fix: Added apiKey property to ApiResponse to resolve AdminDashboard errors.
+  value?: any; // Added value to support user preference retrieval in App.tsx
 }
 
 export const getPublicIP = async (): Promise<string> => {
@@ -66,6 +67,16 @@ const callScript = async (payload: any, useKeepAlive = false): Promise<ApiRespon
       : error.message || 'Lỗi kết nối Server.';
     return { status: 'error', message: msg };
   }
+};
+
+// Added saveUserPreference to resolve import error in App.tsx
+export const saveUserPreference = async (username: string, key: string, value: string): Promise<ApiResponse> => {
+  return callScript({ action: 'save_pref', username, key, value });
+};
+
+// Added getUserPreference to resolve import error in App.tsx
+export const getUserPreference = async (username: string, key: string): Promise<ApiResponse> => {
+  return callScript({ action: 'get_pref', username, key });
 };
 
 export const getImageBase64 = async (url: string): Promise<string> => {

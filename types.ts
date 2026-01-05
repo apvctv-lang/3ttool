@@ -26,12 +26,23 @@ export enum RopeType {
   GOLD_METALLIC = 'Dây kim tuyến vàng'
 }
 
+// Added ROPE_OPTIONS to resolve import error in DesignAnalysisModal.tsx
+export const ROPE_OPTIONS = [
+  { id: RopeType.NONE, name: 'None', color: 'transparent' },
+  { id: RopeType.JUTE, name: 'Dây gai (Jute)', color: '#a89078' },
+  { id: RopeType.RED_RIBBON, name: 'Dây ribbon đỏ', color: '#dc2626' },
+  { id: RopeType.RED_WHITE_TWINE, name: 'Dây dù trắng đỏ', color: 'repeating-linear-gradient(45deg, #fff, #fff 5px, #dc2626 5px, #dc2626 10px)' },
+  { id: RopeType.GOLD_METALLIC, name: 'Dây kim tuyến vàng', color: 'linear-gradient(45deg, #f59e0b, #fef3c7, #f59e0b)' },
+];
+
+export type RetentionLevel = '20%' | '40%' | '60%' | '80%';
+
 export interface AppState {
-  originalImage: string | null; // Base64
-  processedImage: string | null; // Base64
-  extractedElements: string[] | null; // [Character, Pattern] Base64
+  originalImage: string | null;
+  processedImage: string | null;
+  extractedElements: string[] | null;
   analysis: ProductAnalysis | null;
-  generatedRedesigns: string[] | null; // Array of Base64 images
+  generatedRedesigns: string[] | null;
   isProcessing: boolean;
   isAnalyzing: boolean;
   error: string | null;
@@ -43,7 +54,6 @@ export interface AppState {
   isReviewModalOpen: boolean;
 }
 
-// Fix: Added missing username property to HistoryItem interface to satisfy HistorySidebar component requirements
 export interface HistoryItem {
   id: string;
   timestamp: number;
@@ -54,17 +64,18 @@ export interface HistoryItem {
   productType: string;
   designMode: DesignMode;
   ropeType?: RopeType;
-  tab?: AppTab; // New field
+  tab?: AppTab;
   username?: string;
+  retention?: string;
 }
 
 export enum ProcessStage {
   IDLE = 'IDLE',
   UPLOADING = 'UPLOADING',
-  CLEANING = 'CLEANING', // Removing bg and wires
-  ANALYZING = 'ANALYZING', // Generating prompts & extracting elements
-  REVIEW = 'REVIEW', // User reviewing analysis & selecting options
-  GENERATING = 'GENERATING', // Generating new design concepts
+  CLEANING = 'CLEANING',
+  ANALYZING = 'ANALYZING',
+  REVIEW = 'REVIEW',
+  GENERATING = 'GENERATING',
   COMPLETE = 'COMPLETE'
 }
 
@@ -78,22 +89,4 @@ export const PRODUCT_TYPES = [
   "Custom Shape Wooden Ornament",
   "2 Layered Piece Wooden Ornament",
   "Suncatcher Ornament"
-];
-
-export const PRODUCT_MATERIALS: Record<string, string> = {
-  "1 Layer Suncatcher Ornament": "Material: Ultra-thin 3mm Acrylic Plexiglass. Laser cut very tight to the design edge (Kiss-cut). Crystal clear transparency where not printed.",
-  "Stained Glass Suncatcher": "Material: Flexible glass with one side printed. Front is smooth surface, back is rough surface. Translucent properties with light passing through colored areas.",
-  "Glass Ornament": "Material: Real Glass, thickness 4mm. Printed on ONE SIDE. Very clear, sharp edges. High gloss reflection.",
-  "Ceramic Ornament": "Material: Ceramic. Printed in one side or two sides. Opaque, glossy or matte ceramic texture. Solid white edge.",
-  "Transparent Acrylic Ornament": "Material: Ultra-thin 3mm Crystal Clear Acrylic. The cutline follows the design contour exactly (tight border/kiss-cut). Optically clear background (glass-like transparency). NOT thick.",
-  "Custom Shape Wooden Ornament": "Material: Environmental-friendly fiber wood (MDF), 3mm thick. Laser cut with dark burnt edges. Wood texture visible on unprinted areas.",
-  "2 Layered Piece Wooden Ornament": "Material: 2 layered wooden ornament made of fiber wood. Total thickness 6mm (3mm per layer). 3D depth effect between layers.",
-  "Suncatcher Ornament": "Material: Mixed Media. Thin wood frame (3mm) holding a thin Acrylic center (3mm). The acrylic part is crystal clear."
-};
-
-export const ROPE_OPTIONS = [
-  { id: RopeType.JUTE, name: 'Dây gai', color: '#d4c4a8', texture: 'dashed' },
-  { id: RopeType.RED_RIBBON, name: 'Dây ribbon đỏ', color: '#ef4444', texture: 'solid' },
-  { id: RopeType.RED_WHITE_TWINE, name: 'Dây dù trắng đỏ', color: 'repeating-linear-gradient(45deg, #fff, #fff 4px, #ef4444 4px, #ef4444 8px)', texture: 'striped' },
-  { id: RopeType.GOLD_METALLIC, name: 'Dây kim tuyến vàng', color: '#fbbf24', texture: 'solid' }
 ];
